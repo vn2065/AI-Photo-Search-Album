@@ -2,7 +2,7 @@
 swagger: "2.0"
 info:
   description: "AI Photo Search application, built during the Cloud and Big Data course\
-    \ at Columbia University."
+    \ at New York University."
   version: "1.0.0"
   title: "AI Photo Search"
 host: "x3atuhljz7.execute-api.us-east-1.amazonaws.com"
