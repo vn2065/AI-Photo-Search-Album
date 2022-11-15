@@ -1,0 +1,348 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: CloudFormation Assignment 2
+Resources:
+
+  S3BucketFrontend:
+    Type: AWS::S3::Bucket
+    Properties:
+      AccessControl: PublicRead
+      BucketName: s3cloudformation-vn2065
+      WebsiteConfiguration:
+        IndexDocument: index.html
+
+  S3BucketPhotos:
+    Type: 'AWS::S3::Bucket'
+    DependsOn: LF1cfInvokePermission
+    Properties: 
+        BucketName: photosbucketcf-vn2065
+        CorsConfiguration:
+          CorsRules:
+            - AllowedHeaders:
+                - '*'
+              AllowedMethods:
+                - GET
+                - PUT
+              AllowedOrigins:
+                - '*'
+              MaxAge: 3000
+        NotificationConfiguration:
+          LambdaConfigurations:
+            - Event: s3:ObjectCreated:Put
+              Function: !GetAtt [ LF1cf, Arn]
+        PublicAccessBlockConfiguration:
+          BlockPublicAcls: false
+          BlockPublicPolicy: false
+          IgnorePublicAcls: false
+          RestrictPublicBuckets: false
+
+  BucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      PolicyDocument:
+        Id: PublicWebsitePolicy
+        Version: 2012-10-17
+        Statement:
+          - Sid: PublicReadForGetBucketObjects
+            Effect: Allow
+            Principal: '*'
+            Action: 's3:GetObject'
+            Resource: !Join
+              - ''
+              - - 'arn:aws:s3:::'
+                - !Ref S3BucketFrontend
+                - /*
+      Bucket: !Ref S3BucketFrontend
+
+  LF1cfInvokePermission:
+    Type: AWS::Lambda::Permission
+    DependsOn: LF1cf
+    Properties:
+      FunctionName:
+        Fn::GetAtt:
+          - LF1cf
+          - Arn
+      Action: lambda:InvokeFunction
+      Principal: s3.amazonaws.com
+      SourceArn:
+        Fn::Sub: arn:aws:s3:::photosbucketcf-vn2065
+
+  LF1cf:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        S3Bucket: lf1-cf-vn2065
+        S3Key: index-photos-0296d59f-56cb-406e-9a60-4521a5080e0a.zip
+      Description: Lambda function Index Photos
+      MemorySize: 128
+      Environment:
+        Variables:
+          REGION: us-east-1
+      FunctionName: lf1cf1
+      Handler: lf1cf1/index-photos-lambda.lambda_handler
+      Role: 'arn:aws:iam::838023884170:role/service-role/index-photos-role-jmf4cusk'
+      Timeout: 30
+      Runtime: python3.9
+
+  LF2cf:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        S3Bucket: lf2-cf-vn2065
+        S3Key: search-photos-00e4912a-fc49-4ff9-a9d9-76f5e5a23443.zip
+      Description: Lambda function for Search Photos
+      MemorySize: 128
+      Environment:
+        Variables:
+          REGION: us-east-1
+      FunctionName: lf2cf1
+      Handler: lf2cf1/search-photos-lambda.lambda_handler
+      Role: 'arn:aws:iam::838023884170:role/service-role/search-photos-role-liufdxpv'
+      Timeout: 30
+      Runtime: python3.9
+
+  IAMRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Path: "/"
+      RoleName: "api-gateway-upload-to-s3-photos-cf"
+      AssumeRolePolicyDocument: "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Sid\":\"\",\"Effect\":\"Allow\",\"Principal\":{\"Service\":\"apigateway.amazonaws.com\"},\"Action\":\"sts:AssumeRole\"}]}"
+      MaxSessionDuration: 3600
+
+  IAMManagedPolicy:
+    Type: AWS::IAM::Policy
+    DependsOn:
+      - "IAMRole"
+    Properties:
+      PolicyName: photouploadtos3policy
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              - 's3:PutObject'
+            Resource: arn:aws:s3:::photosbucketcf-vn2065/*
+      Roles: 
+        - !Ref IAMRole
+
+  ESInstance:
+    Type: AWS::Elasticsearch::Domain
+    Properties:
+      DomainName: photos-cf-1
+      ElasticsearchVersion: '7.9'
+      ElasticsearchClusterConfig:
+        InstanceType: t3.small.elasticsearch
+        InstanceCount: 1
+      EBSOptions:
+        EBSEnabled: True
+        VolumeType: gp2
+        VolumeSize: 10
+
+  ApiGatewayRestApi:
+      Type: "AWS::ApiGateway::RestApi"
+      Properties:
+          Name: !Sub "AI Photo Search CF1"
+          Description: !Sub "AI Photo Search application"
+          ApiKeySourceType: "HEADER"
+          BinaryMediaTypes: 
+            - "image/jpg"
+            - "image/jpeg"
+            - "image/png"
+          EndpointConfiguration: 
+              Types: 
+                - "REGIONAL"
+
+  ApiGatewayDeployment:
+      Type: "AWS::ApiGateway::Deployment"
+      DependsOn:
+        - ApiGatewayMethod
+        - ApiGatewayMethod2
+        - ApiGatewayMethod3
+        - ApiGatewayMethod4
+      Properties:
+          RestApiId: !Ref ApiGatewayRestApi
+
+  ApiGatewayResource:
+      Type: "AWS::ApiGateway::Resource"
+      Properties:
+          RestApiId: !Ref ApiGatewayRestApi
+          PathPart: "{bucket}"
+          ParentId: !Ref ApiGatewayResource2
+
+  ApiGatewayResource2:
+      Type: "AWS::ApiGateway::Resource"
+      Properties:
+          RestApiId: !Ref ApiGatewayRestApi
+          PathPart: "upload"
+          ParentId: !GetAtt ApiGatewayRestApi.RootResourceId
+
+  ApiGatewayResource3:
+      Type: "AWS::ApiGateway::Resource"
+      Properties:
+          RestApiId: !Ref ApiGatewayRestApi
+          PathPart: "{filename}"
+          ParentId: !Ref ApiGatewayResource
+
+  ApiGatewayResource4:
+      Type: "AWS::ApiGateway::Resource"
+      Properties:
+          RestApiId: !Ref ApiGatewayRestApi
+          PathPart: "search"
+          ParentId: !GetAtt ApiGatewayRestApi.RootResourceId
+
+  ApiGatewayMethod:
+      Type: "AWS::ApiGateway::Method"
+      Properties:
+          RestApiId: !Ref ApiGatewayRestApi
+          ResourceId: !Ref ApiGatewayResource4
+          HttpMethod: "OPTIONS"
+          AuthorizationType: "NONE"
+          ApiKeyRequired: false
+          RequestParameters: {}
+          MethodResponses: 
+            - 
+              ResponseModels: 
+                  "application/json": "Empty"
+              ResponseParameters: 
+                  "method.response.header.Access-Control-Allow-Headers": false
+                  "method.response.header.Access-Control-Allow-Methods": false
+                  "method.response.header.Access-Control-Allow-Origin": false
+              StatusCode: "200"
+          Integration: 
+              CacheNamespace: !Ref ApiGatewayResource4
+              IntegrationResponses: 
+                - 
+                  ResponseParameters: 
+                      "method.response.header.Access-Control-Allow-Headers": "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+                      "method.response.header.Access-Control-Allow-Methods": "'GET,OPTIONS'"
+                      "method.response.header.Access-Control-Allow-Origin": "'*'"
+                  StatusCode: "200"
+              PassthroughBehavior: "WHEN_NO_MATCH"
+              RequestTemplates: 
+                  "application/json": "{\"statusCode\": 200}"
+              TimeoutInMillis: 29000
+              Type: "MOCK"
+
+  ApiGatewayMethod2:
+      Type: "AWS::ApiGateway::Method"
+      Properties:
+          RestApiId: !Ref ApiGatewayRestApi
+          ResourceId: !Ref ApiGatewayResource3
+          HttpMethod: "PUT"
+          AuthorizationType: "NONE"
+          ApiKeyRequired: false
+          RequestParameters: 
+              "method.request.header.Content-Type": false
+              "method.request.header.x-amz-meta-customLabels": false
+              "method.request.path.bucket": true
+              "method.request.path.filename": true
+          MethodResponses: 
+            - 
+              ResponseModels: 
+                  "application/json": "Empty"
+              ResponseParameters: 
+                  "method.response.header.Access-Control-Allow-Origin": false
+              StatusCode: "200"
+          Integration: 
+              CacheNamespace: !Ref ApiGatewayResource3
+              Credentials: !Sub "arn:aws:iam::${AWS::AccountId}:role/api-gateway-upload-to-s3-photos-cf"
+              IntegrationHttpMethod: "PUT"
+              IntegrationResponses: 
+                - 
+                  ResponseParameters: 
+                      "method.response.header.Access-Control-Allow-Origin": "'*'"
+                  StatusCode: "200"
+              PassthroughBehavior: "WHEN_NO_MATCH"
+              RequestParameters: 
+                  "integration.request.header.Content-Type": "method.request.header.Content-Type"
+                  "integration.request.header.x-amz-meta-customLabels": "method.request.header.x-amz-meta-customLabels"
+                  "integration.request.path.bucket": "method.request.path.bucket"
+                  "integration.request.path.key": "method.request.path.filename"
+              TimeoutInMillis: 29000
+              Type: "AWS"
+              Uri: !Sub "arn:aws:apigateway:${AWS::Region}:s3:path/{bucket}/{key}"
+
+  ApiGatewayMethod3:
+      Type: "AWS::ApiGateway::Method"
+      Properties:
+          RestApiId: !Ref ApiGatewayRestApi
+          ResourceId: !Ref ApiGatewayResource3
+          HttpMethod: "OPTIONS"
+          AuthorizationType: "NONE"
+          ApiKeyRequired: false
+          RequestParameters: 
+              "method.request.header.Content-Type": false
+              "method.request.header.x-amz-meta-customLabels": false
+          MethodResponses: 
+            - 
+              ResponseModels: 
+                  "application/json": "Empty"
+              ResponseParameters: 
+                  "method.response.header.Access-Control-Allow-Headers": false
+                  "method.response.header.Access-Control-Allow-Methods": false
+                  "method.response.header.Access-Control-Allow-Origin": false
+              StatusCode: "200"
+          Integration: 
+              CacheNamespace: !Ref ApiGatewayResource3
+              IntegrationResponses: 
+                - 
+                  ResponseParameters: 
+                      "method.response.header.Access-Control-Allow-Headers": "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Amz-Meta-CustomLabels'"
+                      "method.response.header.Access-Control-Allow-Methods": "'OPTIONS,PUT'"
+                      "method.response.header.Access-Control-Allow-Origin": "'*'"
+                  StatusCode: "200"
+              PassthroughBehavior: "WHEN_NO_MATCH"
+              RequestTemplates: 
+                  "application/json": "{\"statusCode\": 200}"
+              TimeoutInMillis: 29000
+              Type: "MOCK"
+
+  ApiGatewayMethod4:
+      Type: "AWS::ApiGateway::Method"
+      Properties:
+          RestApiId: !Ref ApiGatewayRestApi
+          ResourceId: !Ref ApiGatewayResource4
+          HttpMethod: "GET"
+          AuthorizationType: "NONE"
+          ApiKeyRequired: false
+          OperationName: !Sub "searchPhotos"
+          RequestParameters: 
+              "method.request.querystring.q": false
+          MethodResponses: 
+            - 
+              ResponseModels: 
+                  "application/json": "Empty"
+              ResponseParameters: 
+                  "method.response.header.Access-Control-Allow-Origin": false
+              StatusCode: "200"
+            - 
+              ResponseModels: 
+                  "application/json": "Error"
+              StatusCode: "403"
+            - 
+              ResponseModels: 
+                  "application/json": "Error"
+              StatusCode: "500"
+          Integration: 
+              CacheNamespace: !Ref ApiGatewayResource4
+              ContentHandling: "CONVERT_TO_TEXT"
+              IntegrationHttpMethod: "POST"
+              IntegrationResponses: 
+                - 
+                  ResponseParameters: 
+                      "method.response.header.Access-Control-Allow-Origin": "'*'"
+                  StatusCode: "200"
+              PassthroughBehavior: "WHEN_NO_MATCH"
+              TimeoutInMillis: 29000
+              Type: "AWS_PROXY"
+              Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:lf2cf1/invocations"
+
+
+Outputs:
+  WebsiteURL:
+    Description: URL for Website Hosted on S3
+    Value:
+      Fn::GetAtt:
+      - S3BucketFrontend
+      - WebsiteURL
