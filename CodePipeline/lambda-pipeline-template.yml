@@ -1,0 +1,18 @@
+AWSTemplateFormatVersion : '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Python file including external libraries
+Resources:
+  LF1Function:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: LF1.lambda_handler
+      Runtime: python3.7
+      FunctionName: LF1Function
+      CodeUri: ./lambdas/
+  LF2Function:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: LF2.lambda_handler
+      Runtime: python3.7
+      FunctionName: LF2Function
+      CodeUri: ./lambdas/
